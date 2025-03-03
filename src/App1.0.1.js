@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback } from "react";
 import "./App.css";
-import foundSound from "./found.wav"; // Ensure your sound file is correctly imported
+import foundSound from "./found.wav"; // Add your sound file
 
-const WORDS = ["APPLE", "ORANGE", "BANANA", "GRAPE", "MELON"];
+const WORDS = ["APPLE", "ORANGE"];
+// const WORDS = ["APPLE", "ORANGE", "BANANA", "GRAPE", "MELON"];
 const GRID_SIZE = 10;
-const WORD_COLORS = ["#FF5733", "#33FF57", "#3357FF", "#FF33A1", "#FFC300"]; // Unique colors for found words
 
 const generateGrid = () => {
   let grid = Array(GRID_SIZE)
@@ -24,8 +24,8 @@ const generateGrid = () => {
   ];
 
   const placeWord = (word) => {
-    let placed = false,
-      attempts = 0;
+    let placed = false;
+    let attempts = 0; // Prevents infinite loops
 
     while (!placed && attempts < 100) {
       attempts++;
@@ -52,6 +52,7 @@ const generateGrid = () => {
 
         if (valid) {
           wordPositions[word] = new Set(positions);
+          wordPositions[word.split("").reverse().join("")] = new Set(positions);
           for (let i = 0; i < word.length; i++) {
             grid[row + dy * i][col + dx * i] = word[i];
           }
@@ -71,6 +72,7 @@ const generateGrid = () => {
     }
   }
 
+  console.log("Generated Grid:", grid);
   return { grid, wordPositions };
 };
 
@@ -79,30 +81,30 @@ const App = () => {
   const [gridData, setGridData] = useState(generateGridMemoized);
   const [selectedCells, setSelectedCells] = useState([]);
   const [foundWords, setFoundWords] = useState(new Set());
-  const [foundWordPositions, setFoundWordPositions] = useState({}); // Stores positions of found words
   const [isDragging, setIsDragging] = useState(false);
   const [timer, setTimer] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const [gameStarted, setGameStarted] = useState(false);
-  const [lastWordTime, setLastWordTime] = useState(0);
-  const [wordTimes, setWordTimes] = useState([]);
+  const [lastWordTime, setLastWordTime] = useState(0); // Stores last found word time
+  const [wordTimes, setWordTimes] = useState([]); // Stores all word find times
 
   useEffect(() => {
     if (!isRunning) return;
+
     const interval = setInterval(() => {
       setTimer((prev) => prev + 1);
     }, 1000);
+
     return () => clearInterval(interval);
   }, [isRunning]);
 
   const startGame = () => {
-    setGridData(generateGridMemoized());
-    setFoundWords(new Set());
-    setFoundWordPositions({});
-    setIsRunning(false);
+    setGridData(generateGridMemoized()); // Reset the grid
+    setFoundWords(new Set()); // Reset found words
+    setIsRunning(false); // Timer does not start immediately
     setGameStarted(true);
     setLastWordTime(0);
-    setWordTimes([]);
+    setWordTimes([]); // Reset word find times
     setTimer(0);
   };
 
@@ -144,20 +146,24 @@ const App = () => {
     if (matchedWord) {
       setFoundWords((prev) => {
         const newFoundWords = new Set([...prev, matchedWord]);
+
+        // ✅ Calculate time since last word was found
         const timeTaken = timer - lastWordTime;
         const updatedWordTimes = [...wordTimes, timeTaken];
 
         setWordTimes(updatedWordTimes);
-        setLastWordTime(timer);
-        setFoundWordPositions((prevPositions) => ({
-          ...prevPositions,
-          [matchedWord]: gridData.wordPositions[matchedWord],
-        }));
+        setLastWordTime(timer); // Update last word found time
 
-        if (!isRunning) setIsRunning(true);
+        // ✅ If this is the first word, start the timer
+        if (!isRunning) {
+          setIsRunning(true);
+        }
 
+        // ✅ If all words are found, stop the game and show stats
         if (newFoundWords.size === WORDS.length) {
           setIsRunning(false);
+
+          // ✅ Ensure the last word's time is included in the avg calculation
           const avgTime =
             updatedWordTimes.length > 0
               ? updatedWordTimes.reduce((sum, t) => sum + t, 0) /
@@ -165,11 +171,11 @@ const App = () => {
               : 0;
 
           alert(
-            `🎉 Congrats! You found all words in ${timer} seconds!\n📊 Avg Time Per Word: ${avgTime.toFixed(
-              2
-            )} seconds`
+            `🎉 Congrats! You found all the words in ${timer} seconds! 🎉\n` +
+              `📊 Average Time Per Word: ${avgTime.toFixed(2)} seconds`
           );
-          startGame();
+
+          startGame(); // Restart game after alert is closed
         }
 
         return newFoundWords;
@@ -185,10 +191,11 @@ const App = () => {
     <div className="container" onMouseUp={handleMouseUp}>
       <h1>Word Search</h1>
       <button onClick={startGame} disabled={gameStarted}>
-        Start Game
+        {gameStarted ? "Game Started" : "Start Game"}
       </button>
       <h2>Time: {timer}s</h2>
 
+      {/* ✅ Grid Rendering Fixed */}
       <div className="grid">
         {gridData.grid.map((row, rowIndex) => (
           <div key={rowIndex} className="row">
@@ -196,22 +203,17 @@ const App = () => {
               const isSelected = selectedCells.some(
                 ([r, c]) => r === rowIndex && c === colIndex
               );
-              const foundWord = [...foundWords].find((word) =>
-                foundWordPositions[word]?.has(`${rowIndex}-${colIndex}`)
+              const isFound = Object.entries(gridData.wordPositions).some(
+                ([word, positions]) =>
+                  foundWords.has(word) &&
+                  positions.has(`${rowIndex}-${colIndex}`)
               );
-              const highlightColor = foundWord
-                ? WORD_COLORS[
-                    [...foundWords].indexOf(foundWord) % WORD_COLORS.length
-                  ]
-                : isSelected
-                ? "#87cefa"
-                : "transparent";
-
               return (
                 <div
                   key={colIndex}
-                  className="cell"
-                  style={{ backgroundColor: highlightColor }}
+                  className={`cell ${isSelected ? "selected" : ""} ${
+                    isFound ? "found" : ""
+                  }`}
                 >
                   <p
                     className="letter"
@@ -226,15 +228,12 @@ const App = () => {
           </div>
         ))}
       </div>
+
       <div className="word-list">
         <h3>Find These Words:</h3>
         <ul>
-          {WORDS.map((word, index) => (
-            <li
-              key={index}
-              className={foundWords.has(word) ? "found" : ""}
-              style={{ color: WORD_COLORS[index % WORD_COLORS.length] }}
-            >
+          {WORDS.map((word) => (
+            <li key={word} className={foundWords.has(word) ? "found" : ""}>
               {word}
             </li>
           ))}
